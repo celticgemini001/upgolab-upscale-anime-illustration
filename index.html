@@ -163,7 +163,7 @@ it preserves sharpness on <em>wide</em> features and inflates <em>narrow</em> on
 <p><strong>2. Phase, not filter, dominates the result.</strong> Look at FWHM σ. The nearest
 neighbour result — the crudest possible filter — varies by 0.48px across phases, which is nearly
 half a source pixel. Lanczos tightens that to 0.29px. So the choice between nearest and Lanczos
-is worth about 0.19px of thickness stability. The choice between "this stroke landed on offset
+is worth about 0.20px of thickness stability. The choice between "this stroke landed on offset
 0.0" and "this stroke landed on offset 0.5" is worth a full 1.00px. A file does not contain
 strokes at one phase; it contains all of them, adjacent, so the output contains every thickness
 between 1px and 2px for lines that were drawn identically.</p>
