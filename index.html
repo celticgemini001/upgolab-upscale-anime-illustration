@@ -128,6 +128,151 @@ back with confident contours it never had. That is a style change disguised as a
 and on line art — where style <em>is</em> the content — it is a bigger change than any
 resolution difference.</p>
 
+<h2>The hairline that is not where you think it is</h2>
+
+<p>Everything above treats a line as a run of pixels. That is wrong in a way that matters more
+than filter choice, and it is easy to demonstrate. A 1px line in a drawing is not sitting on a
+pixel boundary. It is wherever the artist dragged the pen, which after export or scanning becomes
+a <em>fractional</em> offset: 30% of the ink in one pixel column and 70% in the next. The line is
+still 1px wide. It is just smeared across a phase you cannot see.</p>
+
+<p>To measure what upscaling does to that, I generated 1px, 1.5px and 2px strokes at eight
+sub-pixel phases (0, 0.125, … 0.875), anti-aliased them with 8× area coverage the way a real
+export does, upscaled 3× with each filter, and measured two things per result: the full width at
+half maximum of the stroke (in source pixels) and its peak contrast as a percentage of black.</p>
+
+<table>
+<thead><tr><th>Method</th><th class="num">Mean FWHM</th><th class="num">FWHM σ</th><th class="num">FWHM range</th><th class="num">Contrast σ</th></tr></thead>
+<tbody>
+<tr><td>source (1px, no upscale)</td><td class="num">1.00px</td><td class="num">0.00</td><td class="num">1.00–1.00</td><td class="num">15.3pp</td></tr>
+<tr><td>nearest ×3</td><td class="num">1.38px</td><td class="num">0.48</td><td class="num">1.00–2.00</td><td class="num">15.3pp</td></tr>
+<tr><td>bilinear ×3</td><td class="num">1.38px</td><td class="num">0.35</td><td class="num">1.00–2.00</td><td class="num">15.3pp</td></tr>
+<tr><td>bicubic ×3</td><td class="num">1.38px</td><td class="num">0.35</td><td class="num">1.00–2.00</td><td class="num">14.2pp</td></tr>
+<tr><td>lanczos ×3</td><td class="num">1.46px</td><td class="num">0.29</td><td class="num">1.00–2.00</td><td class="num">12.9pp</td></tr>
+</tbody>
+</table>
+
+<p>Three things fall out of that table, and the second one is the reason this section exists.</p>
+
+<p><strong>1. The 1px line comes out 38–46% thicker.</strong> Every filter reports a mean FWHM of
+1.38–1.46px where the source measured 1.00px. The line did not grow because the image got bigger
+— it grew because half-maximum spreading is what a resampling kernel does to a feature narrower
+than its support. Lanczos is the worst offender here, which is the opposite of its reputation:
+it preserves sharpness on <em>wide</em> features and inflates <em>narrow</em> ones.</p>
+
+<p><strong>2. Phase, not filter, dominates the result.</strong> Look at FWHM σ. The nearest
+neighbour result — the crudest possible filter — varies by 0.48px across phases, which is nearly
+half a source pixel. Lanczos tightens that to 0.29px. So the choice between nearest and Lanczos
+is worth about 0.19px of thickness stability. The choice between "this stroke landed on offset
+0.0" and "this stroke landed on offset 0.5" is worth a full 1.00px. A file does not contain
+strokes at one phase; it contains all of them, adjacent, so the output contains every thickness
+between 1px and 2px for lines that were drawn identically.</p>
+
+<p><strong>3. Contrast never recovers, it just stops dropping.</strong> Peak stroke darkness
+across the phase sweep spans 50% to 100% for a 1px source, and the upscale does not narrow that
+spread — it reproduces it. Below half-grey the stroke's own mid-tone pixels disappear from any
+binary count, which is why the ink-coverage test earlier in this article reads −12% for text
+rather than the full 50%: the strokes that lose the most ink are the ones already at the
+threshold, and they are lost silently.</p>
+
+<h2>Where the phase problem stops — measured, not guessed</h2>
+
+<p>The useful question is not "how do I fix hairlines" but "how thin does a line have to be
+before phase owns it". So I swept nominal width too, and measured the standard deviation of
+contrast across the eight phases. That number is the noise floor the file's own geometry imposes
+before any upscaler touches it:</p>
+
+<table>
+<thead><tr><th>Nominal width</th><th class="num">Source σ</th><th class="num">nearest</th><th class="num">bilinear</th><th class="num">bicubic</th><th class="num">lanczos</th></tr></thead>
+<tbody>
+<tr><td>1.00px</td><td class="num">15.3pp</td><td class="num">15.3</td><td class="num">15.3</td><td class="num">14.2</td><td class="num">12.9</td></tr>
+<tr><td>1.25px</td><td class="num">13.1pp</td><td class="num">13.1</td><td class="num">13.1</td><td class="num">11.6</td><td class="num">9.4</td></tr>
+<tr><td>1.50px</td><td class="num">8.7pp</td><td class="num">8.7</td><td class="num">8.7</td><td class="num">6.3</td><td class="num">3.4</td></tr>
+<tr><td>1.75px</td><td class="num">4.0pp</td><td class="num">4.0</td><td class="num">4.0</td><td class="num">0.8</td><td class="num">0.0</td></tr>
+<tr><td>2.00px</td><td class="num">0.0pp</td><td class="num">0.0</td><td class="num">0.0</td><td class="num">0.0</td><td class="num">0.0</td></tr>
+</tbody>
+</table>
+
+<p>The row at 2.00px is exactly zero for every method, because a 2px stroke always occupies at
+least one full pixel column at any phase — it cannot fall between the cracks. The row at 1.00px is
+15.3pp, and there is nothing an interpolator can do about it, because nearest and bilinear both
+return the source value 15.3 unchanged. This is the whole argument in one table:
+<em>upscaling cannot add phase information that the file does not contain.</em></p>
+
+<p>Lanczos does genuinely help below 2px — 8.7pp down to 3.4pp at 1.5px, 4.0pp to 0.0pp at
+1.75px. It averages neighbouring phases into a locally consistent thickness, which is why thin
+curves look smoother after a Lanczos upscale. But the price is in the first table: mean FWHM goes
+up from 1.38 to 1.46px. Lanczos buys stability by making the line fatter. On a drawing where
+line weight carries meaning, that trade deserves a conscious decision rather than a default.</p>
+
+<div class="callout">
+<p><strong>Why this explains the −7% ink result from earlier.</strong> The ink-coverage test
+measured a 7% loss across a whole drawing. That 7% is an average over strokes of every width and
+every phase. Split by width and the average dissolves: 2px strokes lose nothing (σ = 0), 1px
+strokes lose up to half their contrast depending only on where they happened to be drawn. A
+single global number hides the fact that the damage is concentrated in the thinnest strokes at the
+worst phases — which is also why sharpening "recovers" 20%: it re-darkens the mid-tones that the
+filter diluted, at the cost of putting the same energy outside the line.</p>
+</div>
+
+<h2>Reproducing the phase measurement</h2>
+
+<p>No image asset is needed; the strokes are generated. The trick that makes the test honest is
+supersampling the source at 8× and then integrating, so the source is anti-aliased the way a real
+export is, instead of being a clean binary strip that no real file contains:</p>
+
+<pre><code>SS = 8
+
+def aastroke(n, w, offset, height=9):
+    """horizontal stroke of width w starting at fractional x = offset"""
+    x  = np.arange(n * SS) / SS
+    x0, x1 = 40.0 + offset, 40.0 + offset + w
+    cov = np.clip(np.minimum(x1, x + 1.0/SS) - np.maximum(x0, x), 0, None)
+    row = 255.0 * (1.0 - cov.reshape(n, SS).sum(axis=1).clip(0, 1))
+    return Image.fromarray(np.tile(row, (height, 1)).astype(np.uint8), "L")
+
+def contrast(im):                     # peak darkness, 100 = fully black
+    return (255.0 - np.asarray(im.convert("L"), float).min()) / 255.0 * 100
+
+def fwhm(im, scale):                  # half-max width, back in source pixels
+    row = 255.0 - np.asarray(im.convert("L"), float)[im.size[1] // 2]
+    if row.max() &lt; 1: return 0.0
+    idx = np.where(row &gt;= row.max() / 2)[0]
+    return (idx[-1] - idx[0] + 1) / scale if len(idx) else 0.0
+
+# sweep phase, not filter, first
+for off in np.arange(0, 1.0, 0.125):
+    src = aastroke(120, 1.0, off)
+    up  = src.resize((360, 27), Image.LANCZOS)
+    print(off, round(fwhm(up, 3), 2), round(contrast(up), 1))
+</code></pre>
+
+<p>If you run this and see the printed contrast fall from 100% to 50% and back as the offset
+sweeps 0 → 0.5 → 1.0, the test is working. That curve is the noise floor, and it is present in
+every line drawing you own.</p>
+
+<h2>What to do about it, in order</h2>
+
+<ol>
+  <li><strong>Check stroke width before choosing a filter.</strong> If the drawing's thinnest
+  meaningful strokes are below ~1.75px, phase is your dominant error term and no filter choice
+  will outperform it. Above 2px, phase is zero for every method and filters behave the way the
+  marketing says they do.</li>
+  <li><strong>Upscale less, not cleaner.</strong> The numbers above scale with the resize factor
+  the same way the earlier ink test does: halving the scale factor keeps far more of the fine
+  structure than any kernel change. A 1.5× upscale of a hairlined drawing loses almost nothing
+  that a 4× upscale does not destroy outright.</li>
+  <li><strong>Treat thickening as a style change, then decide.</strong> Lanczos at 1.46px mean
+  versus nearest at 1.38px is a 6% average weight increase — small on average, but the per-file
+  effect is that every curve gets a little heavier while stair-stepped curves get smoother. If
+  the drawing's line weight is the point, nearest-and-then-dealias is more faithful; if smoothness
+  is the point, Lanczos is the better engineering choice.</li>
+  <li><strong>Do not sharpen a hairlined drawing.</strong> Sharpening attacks exactly the
+  mid-tone fringe that phase created, and it does it selectively — the strokes at bad phases get
+  over-darkened while the ones at good phases barely move. That is how a uniform set of lines
+  becomes a visibly uneven set of lines after an "enhance".</li>
+</ol>
+
 <h2>Reproducing it</h2>
 
 <pre><code># ink coverage = fraction of pixels below mid-grey
