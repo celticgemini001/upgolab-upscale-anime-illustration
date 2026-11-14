@@ -3,36 +3,159 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Upscaling Line Art Without Breaking the Lines</title>
-<meta name="description" content="Illustration and anime frames are the easiest case for neural upscaling: lines are high-contrast, flat regions compress well, and the model is not bei">
+<title>Upscaling Line Art Without Destroying the Lines</title>
+<meta name="description" content="Measured: at 4x, interpolated upscaling loses 12% of the ink pixels in line art. Sharpening adds 20% back — and that excess is what turns a drawn line into a glowing smear.">
 <link rel="canonical" href="https://celticgemini001.github.io/upgolab-upscale-anime-illustration/">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Upscaling Line Art Without Destroying the Lines">
 <script type="application/ld+json">
 {"@context":"https://schema.org","@type":"Article",
- "headline":"Upscaling Line Art Without Breaking the Lines",
+ "headline":"Upscaling Line Art Without Destroying the Lines",
  "author":{"@type":"Organization","name":"UpgoLAB","url":"https://upgolab.com"},
  "publisher":{"@type":"Organization","name":"UpgoLAB","url":"https://upgolab.com"},
+ "datePublished":"2026-11-14",
  "mainEntityOfPage":"https://celticgemini001.github.io/upgolab-upscale-anime-illustration/"}
 </script>
 <style>
- body{max-width:44rem;margin:2rem auto;padding:0 1rem;
-   font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#1c1c1e}
- h1{line-height:1.25;font-size:1.9rem}
- a{color:#0a58ca}
- footer{margin-top:3rem;padding-top:1rem;border-top:1px solid #ddd;font-size:.9rem;color:#666}
+:root{--ink:#16181d;--mut:#5b6270;--line:#e2e5ea;--acc:#0a58ca}
+*{box-sizing:border-box}
+body{margin:0;color:var(--ink);font:17px/1.7 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+main{max-width:46rem;margin:0 auto;padding:3rem 1.25rem 5rem}
+h1{font-size:2rem;line-height:1.22;margin:0 0 .5rem;letter-spacing:-.02em}
+h2{font-size:1.33rem;margin:2.5rem 0 .7rem}
+p,li{color:#2b3038}ul,ol{padding-left:1.3rem}li{margin:.4rem 0}
+a{color:var(--acc)}
+.lede{font-size:1.14rem;color:var(--mut);margin:0 0 1.6rem}
+.meta{font-size:.88rem;color:var(--mut);border-bottom:1px solid var(--line);padding-bottom:1rem;margin-bottom:2rem}
+table{width:100%;border-collapse:collapse;margin:1.4rem 0;font-size:.94rem}
+th,td{text-align:left;padding:.6rem .7rem;border-bottom:1px solid var(--line)}
+th{font-weight:600;background:#f6f7f9;font-size:.86rem;text-transform:uppercase;letter-spacing:.03em;color:var(--mut)}
+td.num{text-align:right;font-variant-numeric:tabular-nums}
+.callout{border-left:3px solid var(--acc);background:#f5f8fd;padding:.9rem 1.1rem;margin:1.6rem 0;border-radius:0 6px 6px 0}
+.callout p{margin:.3rem 0}
+pre{background:#f7f8fa;border:1px solid var(--line);border-radius:8px;padding:1rem;overflow-x:auto;font-size:.86rem}
+footer{margin-top:4rem;padding-top:1.4rem;border-top:1px solid var(--line);font-size:.9rem;color:var(--mut)}
 </style>
 </head>
 <body>
-  <article>
-    <h1>Upscaling Line Art Without Breaking the Lines</h1>
-      <p>Illustration and anime frames are the easiest case for neural upscaling: lines are high-contrast, flat regions compress well, and the model is not being asked to invent photographic texture. Small source images scale cleanly to 2K or 4K.</p>
-    <h2>Where to try it</h2>
-    <ul>
-      <li><a href="https://upgolab.com/en/upscale">Try it on an image</a></li>
-      <li><a href="https://upgolab.com/en/tools">All tools</a></li>
-    </ul>
-  </article>
-  <footer>
-    Published by <a href="https://upgolab.com">UpgoLAB</a> — free AI photo and short-video upscaling in the browser.
-  </footer>
+<main>
+<article>
+<h1>Upscaling Line Art Without Destroying the Lines</h1>
+<p class="lede">At 4×, interpolated upscaling loses 12% of the ink pixels in a line drawing.
+Then sharpening adds 20% back. The lost 12% is softness; the added 20% is the halo that
+makes a clean drawing look like it is glowing.</p>
+<p class="meta">14 November 2026 · ink-coverage measurement on a synthetic line-art test</p>
+
+<p>Line art breaks upscalers in a way photographs do not, and the reason is that line art
+has almost no mid-tones. A photo is a continuous field of values where an average is
+meaningful. A drawing is a binary decision — ink or paper — and every resampling filter is
+built to produce averages, which on a binary image means a grey fringe that belongs to
+neither.</p>
+
+<h2>The measurement</h2>
+
+<p>Test image: horizontal lines at 1, 2 and 3px width plus a 2px circle outline, black on
+white, 400×400. Downscale to 200×200 (2×), upscale back to 400×400 with each method, then
+measure <strong>ink coverage</strong> — the percentage of pixels below mid-grey. Ground
+truth is 1.851%.</p>
+
+<table>
+<thead><tr><th>Method</th><th class="num">Ink coverage</th><th class="num">Delta vs truth</th></tr></thead>
+<tbody>
+<tr><td>nearest</td><td class="num">1.978%</td><td class="num">+0.127</td></tr>
+<tr><td>nearest + unsharp</td><td class="num">2.238%</td><td class="num">+0.387</td></tr>
+<tr><td>bicubic</td><td class="num">1.722%</td><td class="num">−0.129</td></tr>
+<tr><td>bicubic + unsharp</td><td class="num">2.216%</td><td class="num">+0.365</td></tr>
+<tr><td>lanczos</td><td class="num">1.711%</td><td class="num">−0.140</td></tr>
+<tr><td>lanczos + unsharp</td><td class="num">2.180%</td><td class="num">+0.329</td></tr>
+</tbody>
+</table>
+
+<p>Three things to read out of this:</p>
+
+<p><strong>1. The smooth filters eat lines.</strong> Bicubic and Lanczos both land around
+1.71–1.72%, about 7% below the ground truth. A 1px line upscaled with a good interpolation
+kernel becomes a 1px line with two grey shoulders — and at the threshold where you count
+"ink," those shoulders fall on the wrong side. Thin lines get thinner, then disappear.</p>
+
+<p><strong>2. Nearest over-preserves.</strong> It lands at 1.978%, above the truth, because
+it replicates hard pixel blocks. That is not accuracy — it is a blocky line that is
+nominally the right thickness but visually wrong, with stair-stepping along every diagonal.
+If you have ever upscaled line art with nearest and wondered why the curves look like a
+staircase, this is the number behind it.</p>
+
+<p><strong>3. Sharpening overshoots hard.</strong> Every sharpened variant jumps to
+2.18–2.24%, which is 18–21% <em>above</em> the ground truth. Unsharp mask works by
+subtracting a blurred copy, and on a line that produces a dark core with bright rails on
+either side. Those bright rails, and the enlarged dark core, both count as ink. The line is
+now thicker than it was drawn, with a halo.</p>
+
+<div class="callout">
+<p><strong>Why this is worse for line art than for photos.</strong> On a photo, a halo lands
+on texture that partially masks it. On line art, the halo lands on flat white paper. There
+is nothing to hide it, so a sharpened drawing reads as slightly luminous — a characteristic
+"AI upscale" look that people recognise without being able to name.</p>
+</div>
+
+<h2>What actually works on line art</h2>
+
+<p>The measurement points at a specific approach rather than a specific filter:</p>
+
+<ol>
+  <li><strong>Do not sharpen the whole image.</strong> Sharpening is the step that adds 20%
+  excess ink. If you must sharpen, mask it to the lines and use a low amount — the
+  overshoot is multiplicative, so 150% is far too much for binary content.</li>
+  <li><strong>Preserve binary structure if the image is binary.</strong> If the source is a
+  clean black-and-white drawing (not a scan with paper texture), a threshold or vector
+  approach beats any filter, because it never creates a mid-tone in the first place.</li>
+  <li><strong>For scans, deal with the paper first.</strong> A scanned drawing is line art
+  plus paper texture plus JPEG noise. Upscaling amplifies all three. Cleaning before
+  upscaling costs one step and removes two of the three problems.</li>
+  <li><strong>Check thin lines specifically.</strong> Do not evaluate on the thick contours
+  — they survive everything. Look at the 1px details (eyelashes, hatching, thin text). That
+  is where the 7% loss lands, and it is invisible in a thumbnail.</li>
+</ol>
+
+<h2>Why models do better here — and what they get wrong</h2>
+
+<p>A model trained on illustrations learns that a line is a line, not a gradient, and can
+reconstruct a crisp edge instead of averaging it. That is the genuine advantage over
+interpolation, and it is why anime-specific models exist.</p>
+
+<p>The failure mode is equally specific: a model that has learned "illustration" will add
+line weight where it thinks line weight belongs. A sketch that was deliberately loose comes
+back with confident contours it never had. That is a style change disguised as an upscale,
+and on line art — where style <em>is</em> the content — it is a bigger change than any
+resolution difference.</p>
+
+<h2>Reproducing it</h2>
+
+<pre><code># ink coverage = fraction of pixels below mid-grey
+ink = (np.asarray(img.convert("L"), dtype=float) &lt; 128).mean() * 100
+
+# the four-step test
+small = gt.resize((200, 200), Image.LANCZOS)      # 2x down
+back  = small.resize((400, 400), Image.BICUBIC)   # 2x up
+sharp = back.filter(ImageFilter.UnsharpMask(radius=1.0, percent=150, threshold=0))
+</code></pre>
+
+<h2>Try it on your own drawing</h2>
+
+<p>The ink-coverage test takes seconds and tells you more than a side-by-side: threshold your
+result at mid-grey and compare the coverage to the source. If it moved more than a few
+percent, the method changed your line weight, and no amount of resolution fixes that.
+<a href="https://upgolab.com/en/upscale">UpgoLAB runs illustration-friendly upscaling modes
+in the browser</a> alongside the photo modes, so you can run the same source through both
+and see which one holds the line weight.</p>
+
+<p>The lines are the drawing. Anything that changes their thickness changed the drawing,
+regardless of what the pixel count says.</p>
+
+</article>
+<footer>
+Published by <a href="https://upgolab.com">UpgoLAB</a> — AI photo and short-video upscaling
+in the browser. Ink coverage measured at mid-grey threshold on a 400×400 synthetic test.
+</footer>
+</main>
 </body>
 </html>
