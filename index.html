@@ -36,6 +36,15 @@ td.num{text-align:right;font-variant-numeric:tabular-nums}
 pre{background:#f7f8fa;border:1px solid var(--line);border-radius:8px;padding:1rem;overflow-x:auto;font-size:.86rem}
 footer{margin-top:4rem;padding-top:1.4rem;border-top:1px solid var(--line);font-size:.9rem;color:var(--mut)}
 </style>
+<style>
+.sisternav{margin:2rem 0 0;padding-top:1.2rem;border-top:1px solid #e2e5ea}
+.sisternav p{font-size:.8rem;text-transform:uppercase;letter-spacing:.05em;
+ color:#5b6270;margin:0 0 .6rem}
+.sisternav ul{list-style:none;padding:0;margin:0;display:flex;flex-wrap:wrap;gap:.4rem .9rem}
+.sisternav li{margin:0;font-size:.88rem;line-height:1.4}
+.sisternav a{text-decoration:none;border-bottom:1px solid #d5dae2}
+.sisternav a:hover{border-bottom-color:#0a58ca}
+</style>
 </head>
 <body>
 <main>
@@ -56,7 +65,7 @@ neither.</p>
 
 <p>Test image: horizontal lines at 1, 2 and 3px width plus a 2px circle outline, black on
 white, 400×400. Downscale to 200×200 (2×), upscale back to 400×400 with each method, then
-measure <strong>ink coverage</strong> — the percentage of pixels below mid-grey. Ground
+measure <strong><a href="https://celticgemini001.github.io/upgolab-screen-recording-4k/">ink</a> coverage</strong> — the percentage of pixels below mid-grey. Ground
 truth is 1.851%.</p>
 
 <table>
@@ -81,7 +90,7 @@ kernel becomes a 1px line with two grey shoulders — and at the threshold where
 <p><strong>2. Nearest over-preserves.</strong> It lands at 1.978%, above the truth, because
 it replicates hard pixel blocks. That is not accuracy — it is a blocky line that is
 nominally the right thickness but visually wrong, with stair-stepping along every diagonal.
-If you have ever upscaled line art with nearest and wondered why the curves look like a
+If you have ever upscaled <a href="https://celticgemini001.github.io/upgolab-halftone-dots-upscaling/">line art</a> with nearest and wondered why the curves look like a
 staircase, this is the number behind it.</p>
 
 <p><strong>3. Sharpening overshoots hard.</strong> Every sharpened variant jumps to
@@ -433,16 +442,6 @@ regardless of what the pixel count says.</p>
 <footer>
 Published by <a href="https://upgolab.com">UpgoLAB</a> — AI photo and short-video upscaling
 in the browser. Ink coverage measured at mid-grey threshold on a 400×400 synthetic test.
-
-<style>
-.sisternav{margin:2rem 0 0;padding-top:1.2rem;border-top:1px solid #e2e5ea}
-.sisternav p{font-size:.8rem;text-transform:uppercase;letter-spacing:.05em;
- color:#5b6270;margin:0 0 .6rem}
-.sisternav ul{list-style:none;padding:0;margin:0;display:flex;flex-wrap:wrap;gap:.4rem .9rem}
-.sisternav li{margin:0;font-size:.88rem;line-height:1.4}
-.sisternav a{text-decoration:none;border-bottom:1px solid #d5dae2}
-.sisternav a:hover{border-bottom-color:#0a58ca}
-</style>
 
 <nav class="sisternav" aria-label="More measured upscaling guides">
 <p>More measured guides</p>
