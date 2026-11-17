@@ -426,6 +426,15 @@ small = gt.resize((gt.width // 2, gt.height // 2), Image.LANCZOS)   # 2x down
 back  = small.resize(gt.size, Image.BICUBIC)                        # 2x up
 sharp = back.filter(ImageFilter.UnsharpMask(radius=1.0, percent=150, threshold=0))</code></pre>
 
+<h2>Screentone is the other half of the frame</h2>
+
+<p>Everything above is about strokes. A cel frame also carries screentone, and that behaves by
+different numbers: a 6 px screen survives a 4x upscale at 95-100% of its measured dot depth,
+while a 2 px screen arrives at the resampler with only 9% of its depth left and gets the rest
+invented. I measured both, plus where the 1.26 levels of brightness drift comes from, in
+<a href="https://celticgemini001.github.io/upgolab-tools/anime-upscale.html#screentone">the
+screentone measurement</a>.</p>
+
 <h2>Try it on your own drawing</h2>
 
 <p>The ink-coverage test takes seconds and tells you more than a side-by-side: threshold your
