@@ -240,9 +240,11 @@ it — and ink coverage will never show you that, because the ink is still there
   <li><strong>Do not sharpen the whole image.</strong> Sharpening is the step that adds 20%
   excess ink. If you must sharpen, mask it to the lines and use a low amount — the
   overshoot is multiplicative, so 150% is far too much for binary content.</li>
-  <li><strong>Preserve binary structure if the image is binary.</strong> If the source is a
-  clean black-and-white drawing (not a scan with paper texture), a threshold or vector
-  approach beats any filter, because it never creates a mid-tone in the first place.</li>
+  <li><strong>Do not threshold at source resolution.</strong> If the source is a
+  clean black-and-white drawing with no anti-aliasing, thresholding it is a no-op — the file is
+  already binary. If it has any anti-aliasing, thresholding at 1× costs 2.0 dB against plain
+  nearest and deletes 42% of 1px strokes depending only on where they landed on the pixel grid.
+  Measured in the section below.</li>
   <li><strong>For scans, deal with the paper first.</strong> A scanned drawing is line art
   plus paper texture plus JPEG noise. Upscaling amplifies all three. Cleaning before
   upscaling costs one step and removes two of the three problems.</li>
@@ -410,6 +412,215 @@ every line drawing you own.</p>
   over-darkened while the ones at good phases barely move. That is how a uniform set of lines
   becomes a visibly uneven set of lines after an "enhance".</li>
 </ol>
+
+<h2>The binary-structure advice, tested — and it fails on every file that has anti-aliasing</h2>
+
+<p>Two sections up, the advice list says: <em>"Preserve binary structure if the image is binary.
+If the source is a clean black-and-white drawing (not a scan with paper texture), a threshold or
+vector approach beats any filter, because it never creates a mid-tone in the first place."</em></p>
+
+<p>That sentence has been on this page since I wrote it, and it is the only recommendation in the
+list I had never measured. Every other item came out of a run. This one came out of reasoning
+about how thresholds work. So I tested it, and it is wrong — not in a footnote way, but by a
+larger margin than any filter choice discussed above. The short version: <strong>thresholding at
+source resolution costs 2.0 to 3.4 dB, and it deletes 42% of 1-pixel strokes depending only on
+where they sit on the pixel grid.</strong></p>
+
+<p>The reason it is worth a full section is that the mistake is invisible in the way people
+normally check. A thresholded line-art image <em>looks</em> crisp. It has no mid-tones at all,
+which is exactly the property the advice promises. It reads as clean in a thumbnail, it
+compresses smaller, and every metric that measures sharpness rather than accuracy improves. What
+it does not do is stay the drawing.</p>
+
+<h3>What was built, and why it had to be built this way</h3>
+
+<p>The scene has to be identical for every pipeline or the comparison is meaningless, so it is
+defined once in continuous coordinates and rendered by exact area coverage at 16× supersample,
+then box-integrated down. That produces three views of literally the same geometry:</p>
+
+<ul>
+  <li><strong>the truth</strong> — the coverage map at 4× (what the drawing <em>is</em> at the
+  scale we want),</li>
+  <li><strong>the AA file</strong> — the same map at 1×, rounded to uint8, which is what a PNG
+  export actually contains,</li>
+  <li><strong>the binary file</strong> — the 1× map hard-thresholded, for the control case.</li>
+</ul>
+
+<p>The scene is eight horizontal bars from 0.50 px to 3.00 px, each at a different sub-pixel
+offset, on a 96×96 frame. Every pipeline is scored against the same truth. No pipeline gets to
+be compared against its own output.</p>
+
+<pre><code>import numpy as np
+from PIL import Image
+
+SS, W, H, OUT = 16, 96, 96, 4
+
+def scene(scale):
+    """exact area coverage, sampled at `scale` px per file px, box-integrated"""
+    yy = np.arange(H * scale * SS) / (scale * SS) + .5 / (scale * SS)
+    xx = np.arange(H * scale * SS) / (scale * SS) + .5 / (scale * SS)
+    g = np.zeros((H * scale * SS, W * scale * SS))
+    for i, w in enumerate([0.50, 0.60, 0.80, 1.00, 1.25, 1.50, 2.00, 3.00]):
+        cy, dy = 8 + i * 10.0, (i * 0.37) % 1.0          # each bar at a different phase
+        my = (yy &gt;= cy + dy - w / 2) &amp; (yy &lt; cy + dy + w / 2)
+        mx = (xx &gt;= 6.0) &amp; (xx &lt; 70.0)
+        g[np.ix_(my, mx)] = 1.0
+    return g.reshape(H * scale, SS, W * scale, SS).mean(axis=(1, 3))
+
+FILE  = np.round(255.0 - scene(1)   * 255).astype(np.uint8)   # the AA export
+TRUTH = np.round(255.0 - scene(OUT) * 255).astype(np.uint8)   # ground truth at 4x
+TH    = np.where(FILE &lt; 128, 0, 255).astype(np.uint8)          # the advice, applied
+
+def psnr(x, y):
+    mse = ((np.asarray(x, float) - np.asarray(y, float)) ** 2).mean()
+    return 99.0 if mse == 0 else 10 * np.log10(255.0 ** 2 / mse)
+
+fimg  = Image.fromarray(FILE, "L")
+naive = Image.fromarray(TH, "L").resize((W * OUT, H * OUT), Image.NEAREST)
+best  = fimg.resize((W * OUT, H * OUT), Image.LANCZOS)
+
+print(round(psnr(best,  TRUTH), 2))   # 20.54  plain Lanczos, no threshold
+print(round(psnr(naive, TRUTH), 2))   # 17.15  threshold then upscale</code></pre>
+
+<h3>Result 1: "preserve binary structure" and "upscale an already-binary file" are the same operation</h3>
+
+<p>Before the table, the thing that makes it a trap rather than a preference. Thresholding an
+anti-aliased file and then upscaling it produces <strong>byte-identical output</strong> to
+upscaling a file that was binary to begin with. I checked all 147,456 pixels at 4×: 147,456
+match, zero differ.</p>
+
+<p>That collapses two of the options in the advice into one. "Preserve binary structure" is not a
+milder step than "threshold the source"; it <em>is</em> thresholding the source. Whatever a binary
+source costs you, this costs you the same. And a binary source, per the earlier ink test on this
+page, is the input that loses 12% of its ink to a smooth filter. So the advice is not "prefer
+binary content" — it is "start from the worst-case input on purpose".</p>
+
+<h3>Result 2: the cost ladder, against the same truth</h3>
+
+<table>
+<thead><tr><th>Pipeline</th><th class="num">PSNR</th><th class="num">ink error</th><th class="num">mid-tone px</th></tr></thead>
+<tbody>
+<tr><td>nearest</td><td class="num">19.17 dB</td><td class="num">+0.29%</td><td class="num">15,360</td></tr>
+<tr><td>bilinear</td><td class="num">19.61 dB</td><td class="num">+0.29%</td><td class="num">25,704</td></tr>
+<tr><td>bicubic</td><td class="num">20.30 dB</td><td class="num">+2.89%</td><td class="num">22,870</td></tr>
+<tr><td>lanczos</td><td class="num">20.54 dB</td><td class="num">+5.35%</td><td class="num">24,246</td></tr>
+<tr><td><strong>threshold at 1× → nearest</strong></td><td class="num"><strong>17.15 dB</strong></td><td class="num">+3.24%</td><td class="num"><strong>0</strong></td></tr>
+<tr><td>threshold at 1× → lanczos</td><td class="num">18.59 dB</td><td class="num">+10.51%</td><td class="num">21,932</td></tr>
+<tr><td>lanczos at 4× → threshold</td><td class="num">19.71 dB</td><td class="num">+0.56%</td><td class="num">0</td></tr>
+<tr><td>bicubic at 4× → threshold</td><td class="num">20.43 dB</td><td class="num">−6.40%</td><td class="num">0</td></tr>
+<tr><td>bilinear at 4× → threshold</td><td class="num">19.01 dB</td><td class="num">−11.35%</td><td class="num">0</td></tr>
+</tbody>
+</table>
+
+<p>Thresholding at source resolution is the worst row in the table. It costs <strong>2.02 dB
+against nearest neighbour</strong> — the filter nobody recommends, the one with stair-stepping on
+every diagonal — and 3.39 dB against Lanczos. It delivers exactly the property it promises: the
+mid-tone column reads zero. That column is the problem, not the achievement. Every mid-tone that
+was carrying the sub-pixel position of a stroke has been rounded to one of two values, and the
+information in it is gone before the upscaler is ever called.</p>
+
+<p>Note also that thresholding <em>after</em> the upscale is a different animal: bicubic at 4×
+then threshold reaches 20.43 dB, which beats plain nearest by 1.26 dB and misses plain bicubic by
+0.13 dB. The ordering matters more than the threshold: moving the same threshold from before the
+resize to after it is worth 3.27 dB.</p>
+
+<h3>Result 3: the mechanism is a knife edge at exactly 127.5</h3>
+
+<p>The failure is not diffuse. It lands on one value, and the page already documented that value
+in the ink-mass section: a 1 px black line, box-downscaled 2×, becomes two rows of exactly 128,
+and <code>128 &lt; 128</code> is false. Thresholding at 128 deletes it. Here is the same knife
+edge at 1×, with a stroke of nominal width 1.00 px centred exactly on a pixel centre:</p>
+
+<pre><code>&gt;&gt;&gt; float min 127.50  -&gt;  uint8 min 128  -&gt;  DELETED
+&gt;&gt;&gt; # same 1px stroke centred on a pixel EDGE instead:
+&gt;&gt;&gt; uint8 min 0      -&gt;  survives, as a full black row</code></pre>
+
+<p>One stroke, drawn at the same weight by the same artist, survives as solid black or vanishes
+completely depending on a half-pixel shift of where it happened to land when the canvas was
+exported. The threshold is not selecting thin strokes for removal. It is selecting strokes whose
+coverage rounds to 128 for removal, which is a different and much less defensible set.</p>
+
+<p>This is the same class of error as the uint8/float boundary described earlier on this page —
+the 15.00% versus 5.00% measurement that differed by a factor of three because of where the cast
+sat. It is worth saying plainly: that was not an isolated curiosity about a measurement, it is a
+property of the file format, and it bites the pipeline too.</p>
+
+<h3>Result 4: it deletes 42% of 1-pixel strokes, and recall is a 2-D function</h3>
+
+<p>The page's earlier phase sweep varied only the horizontal phase of horizontal bars, which is a
+1-D sweep. A threshold is a 2-D decision — a contour, a hatch mark, a square screentone dot all
+have edges on both axes, and a bad phase on <em>either</em> axis is enough to kill the mark. So I
+repeated the sweep as a square mark over 8×8 = 64 sub-pixel placements:</p>
+
+<table>
+<thead><tr><th>Stroke width</th><th class="num">survive th=128</th><th class="num">recall</th><th class="num">peak contrast of survivors</th></tr></thead>
+<tbody>
+<tr><td>0.50 px</td><td class="num">0 / 64</td><td class="num">0%</td><td class="num">—</td></tr>
+<tr><td>0.75 px</td><td class="num">9 / 64</td><td class="num">14%</td><td class="num">56%</td></tr>
+<tr><td>1.00 px</td><td class="num">37 / 64</td><td class="num">58%</td><td class="num">55–100%</td></tr>
+<tr><td>1.25 px</td><td class="num">59 / 64</td><td class="num">92%</td><td class="num">55–100%</td></tr>
+<tr><td>1.50 px</td><td class="num">64 / 64</td><td class="num">100%</td><td class="num">56–100%</td></tr>
+<tr><td>2.00 px</td><td class="num">64 / 64</td><td class="num">100%</td><td class="num">100%</td></tr>
+</tbody>
+</table>
+
+<p>At 1.00 px, 27 of 64 placements are deleted. That is 42%. The 1-D sweep on the same width
+reported 7 of 8 surviving — 87.5% — because a horizontal bar only has a phase along one axis. The
+2-D answer is about two thirds of the 1-D answer. <strong>The earlier section on this page
+understates the damage for exactly the features it was warning about</strong>, and I would rather
+correct that here than leave a method that flatters its own conclusion.</p>
+
+<p>Two things follow from the rightmost column. Recall is not survival: at 1.25 px all but five
+placements survive, but their peak contrast spans 55% to 100%, so a field of identical dots
+becomes a field of dots at visibly different densities. And at 0.75 px the nine survivors all sit
+at exactly 56% — the threshold either deletes the mark or leaves a ghost at half strength, with
+nothing in between. There is no threshold value that fixes this, because the choice being made is
+binary and the input is not.</p>
+
+<h3>Result 5: where the advice is right, and why it is a tautology there</h3>
+
+<p>One case behaves as advertised. Take a source that is genuinely black-and-white — every pixel
+0 or 255, no anti-aliasing at all — and thresholding it changes <strong>zero pixels</strong>.
+Nearest-neighbour upscale and threshold-then-upscale are byte-identical. The advice is correct.</p>
+
+<p>But look at what it says in that case. A file with no anti-aliasing has nothing for a threshold
+to do. "Preserve binary structure if the image is binary" reduces to "if the file is already
+thresholded, it is already thresholded." It is not a technique that beats filters; it is a no-op
+described as an advantage. The only way the sentence can mean something is if you apply it to a
+file that <em>is not</em> binary — and in that case, per the table above, it costs 2 to 3.4 dB.</p>
+
+<p>Whether such a source exists in practice is the open question, not the recommendation. A
+drawing exported from a vector tool with anti-aliasing enabled is not binary. One exported with
+it disabled is — and then the advice tells you to do nothing, which is also the right answer, but
+for a reason that has nothing to do with thresholds.</p>
+
+<h3>What to do instead</h3>
+
+<ol>
+  <li><strong>Threshold after the resize, never before.</strong> Moving the same threshold to
+  after the upscale is worth 3.27 dB. If you want a two-value output, take it at the target
+  resolution.</li>
+  <li><strong>If you are thresholding, threshold high, not at 128.</strong> The knife edge sits at
+  127.5 because that is where a half-covered pixel rounds to. A level of 160 takes 1 px stroke
+  recall from 37/64 to 59/64, at the cost of fattening a 1.25 px stroke by 62% (1.17 → 1.89
+  pixels of area). Neither level is right; know which error you are choosing.</li>
+  <li><strong>Check a 1 px feature at four phases before you commit.</strong> Four placements is
+  enough to see the spread. If your mark survives at 0.0 and dies at 0.5, the pipeline has a
+  phase problem and no filter setting will fix it.</li>
+  <li><strong>Do not use a threshold to make a drawing look sharp.</strong> It will. That is the
+  measurement: mid-tone pixels go to zero and the picture reads crisper while being further from
+  the truth than the blurry version. It is the same trap as sharpening, one step harder to
+  undo.</li>
+</ol>
+
+<div class="callout">
+<p><strong>What this measurement does not cover.</strong> The scene is synthetic and has no paper
+texture, no JPEG ringing, no colour. It establishes the direction and rough size of the effect on
+clean geometric strokes, which is the case the advice names. It does not establish that a real
+scanned drawing loses exactly 42% of its hairlines — scans carry their own noise that can push a
+marginal stroke either way across the threshold. If you have a real file and a real pen, the
+four-phase check in item 3 is the part worth running.</p>
+</div>
 
 <h2>Reproducing it</h2>
 
